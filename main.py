@@ -1,7 +1,8 @@
 import socket
 from server import Server
 
-if __name__ == "__main__":
+# Server
+def threadfunc():
     # Setup the server, open a socket
     server = Server("127.0.0.1", 3333)
 
@@ -13,3 +14,7 @@ if __name__ == "__main__":
 
     # Close the connection
     server.bot_close()
+
+if __name__ == "__main__":
+    # Simulate only a one thread
+    threadfunc()

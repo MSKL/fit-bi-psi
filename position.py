@@ -12,3 +12,6 @@ class Position:
             return False
         else:
             return True
+
+    def __str__(self):
+        return "bot_position: %d %d" % (self.x, self.y)

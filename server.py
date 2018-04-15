@@ -1,5 +1,6 @@
 import threading
 import socket
+from position import Position
 from functions import *
 from messages import *
 
@@ -17,8 +18,12 @@ class Server:
     sock = None
 
     # Connection to the client
+    logged_in = False
     bot_conn = None
     bot_addr = None
+
+    # The bots position
+    pos = Position()
 
     # Set the port and host in init and create a socket
     def __init__(self, host, port):
@@ -30,6 +35,7 @@ class Server:
         except Exception as inst:
             print("Failed to create or connect a socket with the error %s.", inst)
 
+    # Connect to a bot. The connection was created when initialising
     def bot_connect(self):
         # Wait for the connection
         self.sock.listen(0)
@@ -54,9 +60,11 @@ class Server:
 
         # Check the hash
         if message != str(client_hash):
+            self.logged_in = False
             self.send_msg("SERVER_LOGIN_FAILED")
             self.bot_conn.close()
         else:
+            self.logged_in = True
             self.send_msg("SERVER_OK")
 
     # Sends message from the server. Accepts either any string, or a server message
@@ -91,7 +99,15 @@ class Server:
         print("Received: %s" % received)
         return received
 
+    # Close a connection to a bot
     def bot_close(self):
-        if self.bot_conn is None:
+        if (self.bot_conn is None) or (not self.logged_in):
             print("Connection to be closed does not exist")
+        self.logged_in = False
         self.bot_conn.close()
+
+    # Navigate the bot to the target area
+    def bot_navigate(self):
+        for i in range(0, 20):
+            self.send_msg("SERVER_MOVE")
+            message = self.receive_msg()

@@ -1,8 +1,6 @@
-import threading
 import socket
-from position import Position
+from classes.position_orientation import *
 from functions import *
-from messages import *
 
 
 class Server:
@@ -24,11 +22,13 @@ class Server:
 
     # The bots position
     position = Position()
+    orientation = Orientation()
 
     # Set the port and host in init and create a socket
     def __init__(self, host, port):
         self.port = port
         self.host = host
+        color_print("GREEN", "Starting a server on %s:%d" % (host, port))
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.bind((host, port))
@@ -39,7 +39,7 @@ class Server:
     def bot_connect(self):
         # Wait for the connection
         self.sock.listen(0)
-        self.sock.settimeout(45000)
+        self.sock.settimeout(1000)
 
         # Accept the incoming connection
         (self.bot_conn, self.bot_addr) = self.sock.accept()
@@ -90,10 +90,14 @@ class Server:
         received = ""
         # Read until a delimiter comes
         while not received.endswith("\a\b"):
-            data = self.bot_conn.recv(1)
-            if not data:
-                break
-            received += str(data, 'utf-8')
+            try:
+                data = self.bot_conn.recv(1)
+                if not data:
+                    break
+                received += str(data, 'utf-8')
+            except self.sock.timeout as err:
+                print("Socket timeout %s" % str(err))
+                self.bot_close()
 
         # Strip the ending characters and print the message
         received = end_strip(received)
@@ -108,12 +112,43 @@ class Server:
         self.logged_in = False
         self.bot_conn.close()
 
-    # Move the bot forward and update the position
-    def bot_forward(self):
-        self.send_msg("SERVER_MOVE")
-        received = self.receive_msg()
-        self.position = convert_to_position(received)
-        print(self.position)
+    # Do few moves to obtain the position and orientation of the bot
+    def bot_find_position_orientation(self):
+        last_pos = Position()
+        while self.position.is_unknown() or self.orientation.is_unknown():
+            self.send_msg("SERVER_MOVE")
+            received = self.receive_msg()
+            self.position = convert_to_position(received)
+
+            # If the bot moved, calculate the direction
+            if not last_pos.is_unknown() and not self.position.is_unknown() and last_pos != self.position:
+                delta_x = self.position.x - last_pos.x
+                delta_y = self.position.y - last_pos.y
+
+                if delta_x > 0:
+                    self.orientation = Facing.RIGHT
+                elif delta_x < 0:
+                    self.orientation = Facing.LEFT
+                elif delta_y > 0:
+                    self.orientation = Facing.UP
+                elif delta_y < 0:
+                    self.orientation = Facing.DOWN
+                else:
+                    color_print("RED", "Delta Error")
+
+                print("The bot is %s" % str(self.orientation))
+                break
+
+            last_pos = self.position
+
+    def bot_pickup(self):
+        self.send_msg("SERVER_PICK_UP")
+        self.receive_msg()
+
+    def bot_logout(self):
+        self.send_msg("SERVER_LOGOUT")
+        self.bot_close()
+
 
     # Navigate the bot to the target area
     def bot_navigate(self):

@@ -61,11 +61,11 @@ class Server:
 
         # Check the hash
         if message != str(client_hash):
-            self.send_msg("SERVER_LOGIN_FAILED")
+            self.send_msg(MSG.SERVER_LOGIN_FAILED)
             self.bot_close()
         else:
             self.logged_in = True
-            self.send_msg("SERVER_OK")
+            self.send_msg(MSG.SERVER_OK)
 
     # Sends message from the server. Accepts either any string, or a server message
     def send_msg(self, msg):
@@ -86,7 +86,7 @@ class Server:
         self.bot_conn.sendall(to_bytes(msg))
 
     # Receive a message from the bot's connection and strip the ending \a\b
-    def receive_msg(self):
+    def receive_msg(self, expected_msg = None):
         received = ""
         # Read until a delimiter comes
         while not received.endswith("\a\b"):
@@ -116,7 +116,7 @@ class Server:
     def bot_find_position_orientation(self):
         last_pos = Position()
         while self.position.is_unknown() or self.orientation.is_unknown():
-            self.send_msg("SERVER_MOVE")
+            self.send_msg(MSG.SERVER_MOVE)
             received = self.receive_msg()
             self.position = convert_to_position(received)
 
@@ -134,7 +134,7 @@ class Server:
                 elif delta_y < 0:
                     self.orientation = Facing.DOWN
                 else:
-                    color_print("RED", "Delta Error")
+                    raise Exception("Problem in the orientation.")
 
                 print("The bot is %s" % str(self.orientation))
                 break
@@ -142,15 +142,13 @@ class Server:
             last_pos = self.position
 
     def bot_pickup(self):
-        self.send_msg("SERVER_PICK_UP")
+        self.send_msg(MSG.SERVER_PICK_UP)
         self.receive_msg()
 
-    def bot_logout(self):
-        self.send_msg("SERVER_LOGOUT")
-        self.bot_close()
+    def bot_command_logout(self):
+        self.send_msg(MSG.SERVER_LOGOUT)
 
 
     # Navigate the bot to the target area
     def bot_navigate(self):
-        for i in range(0, 20):
-            self.bot_forward()
+        a = 0

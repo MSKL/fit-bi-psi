@@ -18,7 +18,7 @@ def thread_func():
     server.bot_pickup()
 
     # Close the connection
-    server.bot_logout()
+    server.bot_command_logout()
 
 
 if __name__ == "__main__":

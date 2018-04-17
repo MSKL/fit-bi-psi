@@ -30,7 +30,7 @@ class Position:
 
 
 # Stores the orientation
-class Orientation:
+class Rotation:
     facing = Facing.UNKNOWN
 
     def is_unknown(self):

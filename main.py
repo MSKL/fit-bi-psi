@@ -3,22 +3,29 @@ from classes.server import *
 
 # One thread equals one bot bitch
 def thread_func():
-    # Setup the server, open a socket
-    server = Server("127.0.0.1", 3333)
+    server = None
 
-    # Connect to the client
-    server.bot_connect()
+    try:
+        # Setup the server, open a socket
+        server = Server("127.0.0.1", 3333)
 
-    # Obtain the position and orientation
-    # server.bot_find_position_orientation()
+        # Connect to the client
+        server.bot_connect()
 
-    # Try to navigate
-    # server.bot_navigate()
+        # Obtain the position and orientation
+        server.bot_find_position_orientation()
 
-    server.bot_pickup()
+        # Go to the origin
+        server.bot_search_target_space()
 
-    # Close the connection
-    server.bot_command_logout()
+        # Close the connection
+        server.bot_logout()
+    except (Exception) as e:
+        print("Caught exception %s. Exiting the server" % str(e))
+        server.bot_close()
+    except server.sock.timeout:
+        print("Caught timeout excetion. Exiting the server")
+        server.bot_close()
 
 
 if __name__ == "__main__":

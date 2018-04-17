@@ -2,6 +2,7 @@ from classes.position_orientation import Position
 from enum import Enum
 
 
+# Enum containing all possible types of messages that are used in the communication
 class MSG(Enum):
     SERVER_CONFIRMATION = 0
     SERVER_MOVE = 1
@@ -22,7 +23,7 @@ class MSG(Enum):
 
 
 # Get the length of the client's message
-def msg_len(msg = MSG.CLIENT_OK):
+def msg_len(msg):
     if msg == MSG.CLIENT_OK:
         return 12
     elif msg == MSG.CLIENT_CONFIRMATION:
@@ -39,6 +40,7 @@ def msg_len(msg = MSG.CLIENT_OK):
         raise Exception("Unknown message!")
 
 
+# Get the content of the message from server
 def get_server_message(msg_name):
     server_messages = {
         MSG.SERVER_CONFIRMATION: "%s\a\b",
@@ -56,18 +58,21 @@ def get_server_message(msg_name):
     return server_messages.get(msg_name)
 
 
+# Get the content of the message fro the client
 def get_client_message(msg_name):
     client_messages = {
-        MSG.CLIENT_USERNAME: "%s\a\b",
-        MSG.CLIENT_CONFIRMATION: "%s\a\b",
-        MSG.CLIENT_OK: "OK %d %d\a\b",
-        MSG.CLIENT_RECHARGING: "RECHARGING\a\b",
-        MSG.CLIENT_FULL_POWER: "FULL POWER\a\b",
-        MSG.CLIENT_MESSAGE: "%s\a\b"
+        MSG.CLIENT_USERNAME: "%s",
+        MSG.CLIENT_CONFIRMATION: "%s",
+        MSG.CLIENT_OK: "OK %d %d",
+        MSG.CLIENT_RECHARGING: "RECHARGING",
+        MSG.CLIENT_FULL_POWER: "FULL POWER",
+        MSG.CLIENT_MESSAGE: "%s"
     }
     # Get returns none if the key was not found
     return client_messages.get(msg_name)
 
+
+# Create a hash form the given username
 def hash_username(username):
     char_sum = 0
     for ch in username:
@@ -75,27 +80,27 @@ def hash_username(username):
     return (char_sum * 1000) % 65536
 
 
+# Add a key to the hash
 def add_key(in_num, KEY):
     return (in_num + KEY) % 65536
 
 
+# Convert string -> bytes
 def to_bytes(source):
     return bytes(str(source), 'utf-8')
 
 
+# Add the ending separator
 def end_add(source):
     return str(source) + "\a\b"
 
 
+# Remove the ending separator
 def end_strip(source):
     return str(source).strip("\a\b")
 
 
-def convert_to_position(source):
-    s = source.split(" ")
-    return Position(int(s[1]), int(s[2]))
-
-
+# Print in a colored terminal
 def color_print(color, text):
     c = {
         "PURPLE": '\033[95m',
@@ -112,3 +117,48 @@ def color_print(color, text):
     }
     col = c.get(color)
     print(col + text + c["END"])
+
+
+# Extract data from a message. If faulty throw an an exception.
+def extract_message(raw_msg, client_msg):
+    raw_msg = end_strip(raw_msg)
+
+    # Check the length TODO: Should not be needed
+    if len(raw_msg) > (msg_len(client_msg) - 2):
+        raise Exception("Too many characters")
+
+    if len(raw_msg) == 0 and client_msg != MSG.CLIENT_MESSAGE:
+        raise Exception("Input string length is 0")
+
+    if client_msg == MSG.CLIENT_OK:
+        s = raw_msg.split(" ")
+        if s[0] != "OK" or s[1] == "" or s[2] == "":
+            raise Exception("CLIENT_OK Exception")
+        return Position(int(s[1]), int(s[2]))
+
+    if client_msg == MSG.CLIENT_RECHARGING:
+        if raw_msg != get_client_message(MSG.CLIENT_RECHARGING):
+            raise Exception("CLIENT_RECHARGING Exception")
+        return raw_msg
+
+    if client_msg == MSG.CLIENT_FULL_POWER:
+        if raw_msg != get_client_message(MSG.CLIENT_FULL_POWER):
+            raise Exception("CLIENT_FULL_POWER Exception")
+        return raw_msg
+
+    if client_msg == MSG.CLIENT_CONFIRMATION:
+        return raw_msg
+
+    if client_msg == MSG.CLIENT_MESSAGE:
+        return raw_msg
+
+    if client_msg == MSG.CLIENT_USERNAME:
+        return raw_msg
+
+
+
+
+
+
+
+

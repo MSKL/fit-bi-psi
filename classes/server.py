@@ -1,4 +1,7 @@
 import socket
+
+import sys
+
 from classes.position_orientation import *
 from functions import *
 
@@ -16,13 +19,12 @@ class Server:
     sock = None
 
     # Connection to the client
-    logged_in = False
     bot_conn = None
     bot_addr = None
 
     # The bots position
     position = Position()
-    orientation = Orientation()
+    rotation = Rotation()
 
     # Set the port and host in init and create a socket
     def __init__(self, host, port):
@@ -46,25 +48,24 @@ class Server:
         color_print("RED", '<=> Connected by %s' % str(self.bot_addr))
 
         # Receive a message
-        message = self.receive_msg()
+        username = self.receive_msg(MSG.CLIENT_USERNAME)
 
         # Calculate the hash
-        username_hash = hash_username(message)
+        username_hash = hash_username(username)
         server_hash = add_key(username_hash, self.SERVER_KEY)
-        client_hash = add_key(username_hash, self.CLIENT_KEY)
+        client_hash_real = add_key(username_hash, self.CLIENT_KEY)
 
         # Get the binary array
         self.send_msg(server_hash)
 
         # Receive the client's hash
-        message = self.receive_msg()
+        client_confirmation = self.receive_msg(MSG.CLIENT_CONFIRMATION)
 
         # Check the hash
-        if message != str(client_hash):
+        if client_confirmation != str(client_hash_real):
             self.send_msg(MSG.SERVER_LOGIN_FAILED)
             self.bot_close()
         else:
-            self.logged_in = True
             self.send_msg(MSG.SERVER_OK)
 
     # Sends message from the server. Accepts either any string, or a server message
@@ -86,39 +87,100 @@ class Server:
         self.bot_conn.sendall(to_bytes(msg))
 
     # Receive a message from the bot's connection and strip the ending \a\b
-    def receive_msg(self, expected_msg = None):
-        received = ""
-        # Read until a delimiter comes
-        while not received.endswith("\a\b"):
-            try:
-                data = self.bot_conn.recv(1)
-                if not data:
-                    break
-                received += str(data, 'utf-8')
-            except self.sock.timeout as err:
-                print("Socket timeout %s" % str(err))
-                self.bot_close()
+    def receive_msg(self, expected_msg):
+        received_raw = ""       # String that is being received
+        a_came = False          # \a character came
+        read_whole_msg = False  # If ended well == is correctly long
 
-        # Strip the ending characters and print the message
-        received = end_strip(received)
-        color_print("LIGHTMAGENTA", "<= Received: %s" % received)
-        return received
+        # Setup timeouts based on the expected message
+        if expected_msg == MSG.CLIENT_RECHARGING:
+            self.sock.settimeout(5000)
+        else:
+            self.sock.settimeout(1000)
+
+        debug_raw = ""
+
+        # Try to read the message and throw an exception on error
+        # Read until length exceeded
+        while len(received_raw) <= (msg_len(expected_msg) - 2):
+            # Read from socket
+            data = self.bot_conn.recv(1)
+
+            # If none end
+            if not data:
+                print("Data is none")
+                break
+
+            # Convert to ascii
+            s = str(data, 'utf-8')
+            debug_raw += s
+
+            # Do checks for end
+            if (s == "\a") and (not a_came):
+                a_came = True
+                continue
+            elif (s == "\b") and a_came:
+                read_whole_msg = True
+                break
+            elif (s != "\b") and a_came:
+                raise Exception("Wrong input")
+
+            # Add to the string
+            received_raw += s
+
+        # Raise an exception if ended too soon
+        if not read_whole_msg:
+            print("Raw debug: \"%s\"" % debug_raw)
+            raise Exception("Message too long")
+
+        # Print a debug message
+        color_print("LIGHTMAGENTA", "<= Received: %s" % received_raw)
+        return extract_message(received_raw, expected_msg)
 
     # Close a connection to a bot (if it exists)
     def bot_close(self):
         color_print("RED", "<=> Closing a connection.")
-        if (self.bot_conn is None) or (not self.logged_in):
-            print("Connection to be closed does not exist")
-        self.logged_in = False
-        self.bot_conn.close()
+        try:
+            self.bot_conn.close()
+        except:
+            print("Tried to close a connection but it threw an error but who cares.")
+
+    # Logout from the client
+    def bot_logout(self):
+        self.send_msg(MSG.SERVER_LOGOUT)
+
+    # Try to pickup an object
+    def bot_pickup(self):
+        self.send_msg(MSG.SERVER_PICK_UP)
+        return self.receive_msg(MSG.CLIENT_MESSAGE)
+
+    # Move one tile forward in the direction of current rotation
+    def bot_move_forward(self):
+        self.send_msg(MSG.SERVER_MOVE)
+        self.position = self.receive_msg(MSG.CLIENT_OK)
+
+    # Rotate right and set the proper state
+    def bot_rotate(self):
+        self.send_msg(MSG.SERVER_TURN_RIGHT)
+        self.position = self.receive_msg(MSG.CLIENT_OK)
+
+        # Set the proper next rotation
+        if self.rotation == Facing.UP:
+            self.rotation = Facing.RIGHT
+        elif self.rotation == Facing.RIGHT:
+            self.rotation = Facing.DOWN
+        elif self.rotation == Facing.DOWN:
+            self.rotation = Facing.LEFT
+        elif self.rotation == Facing.LEFT:
+            self.rotation = Facing.UP
+        else:
+            raise Exception("Can't rotate from unknown rotation.")
 
     # Do few moves to obtain the position and orientation of the bot
     def bot_find_position_orientation(self):
         last_pos = Position()
-        while self.position.is_unknown() or self.orientation.is_unknown():
-            self.send_msg(MSG.SERVER_MOVE)
-            received = self.receive_msg()
-            self.position = convert_to_position(received)
+        while self.position.is_unknown() or self.rotation.is_unknown():
+            self.bot_move_forward()
 
             # If the bot moved, calculate the direction
             if not last_pos.is_unknown() and not self.position.is_unknown() and last_pos != self.position:
@@ -126,29 +188,46 @@ class Server:
                 delta_y = self.position.y - last_pos.y
 
                 if delta_x > 0:
-                    self.orientation = Facing.RIGHT
+                    self.rotation = Facing.RIGHT
                 elif delta_x < 0:
-                    self.orientation = Facing.LEFT
+                    self.rotation = Facing.LEFT
                 elif delta_y > 0:
-                    self.orientation = Facing.UP
+                    self.rotation = Facing.UP
                 elif delta_y < 0:
-                    self.orientation = Facing.DOWN
+                    self.rotation = Facing.DOWN
                 else:
                     raise Exception("Problem in the orientation.")
 
-                print("The bot is %s" % str(self.orientation))
+                print("The bot is %s" % str(self.rotation))
                 break
 
             last_pos = self.position
 
-    def bot_pickup(self):
-        self.send_msg(MSG.SERVER_PICK_UP)
-        self.receive_msg()
+    # Go to the position first on x, then on y axis
+    def bot_go_to_position(self, new_x, new_y):
+        np = Position(new_x, new_y)
+        while self.position != np:
+            # Move towards the target first on X and then on Y
+            if np.x != self.position.x:
+                delta_x = np.x - self.position.x
+                if (delta_x > 0 and self.rotation != Facing.RIGHT) or (delta_x < 0 and self.rotation != Facing.LEFT):
+                    self.bot_rotate()
+                else:
+                    self.bot_move_forward()
+            else:
+                delta_y = np.y - self.position.y
+                if (delta_y > 0 and self.rotation != Facing.UP) or (delta_y < 0 and self.rotation != Facing.DOWN):
+                    self.bot_rotate()
+                else:
+                    self.bot_move_forward()
 
-    def bot_command_logout(self):
-        self.send_msg(MSG.SERVER_LOGOUT)
-
-
-    # Navigate the bot to the target area
-    def bot_navigate(self):
-        a = 0
+    def bot_search_target_space(self):
+        for y in range(-2, 3):
+            for x in range(-2, 3):
+                self.bot_go_to_position(x, y)
+                message = self.receive_msg(MSG.CLIENT_MESSAGE)
+                if message != "":
+                    print("Found the message %s." % message)
+                    return message
+        # If not found raise an exception
+        raise Exception("Message was not found")

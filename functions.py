@@ -5,8 +5,8 @@ import socket
 import re
 
 
-# Enum containing all possible types of messages that are used in the communication
 class MSG(Enum):
+    """Enum containing all possible types of messages that are used in the communication"""
     SERVER_CONFIRMATION = 0
     SERVER_MOVE = 1
     SERVER_TURN_LEFT = 2
@@ -25,8 +25,8 @@ class MSG(Enum):
     CLIENT_MESSAGE = 15
 
 
-# Get the length of the client's message
 def msg_len(msg):
+    """Get the length of the client's message"""
     if msg == MSG.CLIENT_OK:
         return 12
     elif msg == MSG.CLIENT_CONFIRMATION:
@@ -43,8 +43,8 @@ def msg_len(msg):
         raise Exception("Unknown message!")
 
 
-# Get the content of the message from server
 def get_server_message(msg_name):
+    """Get the content of the message from server"""
     server_messages = {
         MSG.SERVER_CONFIRMATION: "%s\a\b",
         MSG.SERVER_MOVE: "102 MOVE\a\b",
@@ -61,8 +61,8 @@ def get_server_message(msg_name):
     return server_messages.get(msg_name)
 
 
-# Get the content of the message fro the client
 def get_client_message(msg_name):
+    """Get the content of the message from the client"""
     client_messages = {
         MSG.CLIENT_USERNAME: "%s\a\b",
         MSG.CLIENT_CONFIRMATION: "%s\a\b",
@@ -75,8 +75,8 @@ def get_client_message(msg_name):
     return client_messages.get(msg_name)
 
 
-# Create a hash form the given username
 def hash_username(username):
+    """Create a hash form the given username"""
     stripped = end_strip(username)
     char_sum = 0
     for ch in stripped:
@@ -84,28 +84,28 @@ def hash_username(username):
     return (char_sum * 1000) % 65536
 
 
-# Add a key to the hash
 def add_key(in_num, KEY):
+    """Add a key to the hash"""
     return (in_num + KEY) % 65536
 
 
-# Convert string -> bytes
 def to_bytes(source):
+    """Convert string to bytes"""
     return bytes(str(source), 'utf-8')
 
 
-# Add the ending separator
 def end_add(source):
+    """Add the ending separator"""
     return str(source) + "\a\b"
 
 
-# Remove the ending separator
 def end_strip(source):
+    """Remove the ending separator"""
     return str(source).rstrip("\a\b")
 
 
-# Print in a colored terminal
 def color_print(color, text):
+    """Print in a colored terminal"""
     c = {
         "PURPLE": '\033[95m',
         "CYAN": '\033[96m',
@@ -123,13 +123,13 @@ def color_print(color, text):
     print(col + text + c["END"])
 
 
-# Extract data from a message. If faulty throw an an exception.
 def extract_message(raw_msg, client_msg):
+    """Check the whole message. Extract the Position data if necessary."""
+    # If received recharging, don't do any checks
+    if raw_msg == get_client_message(MSG.CLIENT_RECHARGING):
+        return raw_msg
 
-    # Check the length TODO: Should not be needed
-    if len(raw_msg) > (msg_len(client_msg)):
-        raise SyntaxErrorException("Too many characters %s" % str(repr(client_msg)))
-
+    # Check the length
     if len(raw_msg) == 0 and client_msg != MSG.CLIENT_MESSAGE:
         raise SyntaxErrorException("Input string length is 0")
 
@@ -139,47 +139,22 @@ def extract_message(raw_msg, client_msg):
         s = end_strip(raw_msg)
         s = s.split(" ")
         return Position(int(s[1]), int(s[2]))
-
-    if client_msg == MSG.CLIENT_RECHARGING:
-        if raw_msg != get_client_message(MSG.CLIENT_RECHARGING):
-            raise SyntaxErrorException("CLIENT_RECHARGING")
-        return raw_msg
-
-    if client_msg == MSG.CLIENT_FULL_POWER:
+    elif client_msg == MSG.CLIENT_FULL_POWER:
         if raw_msg != get_client_message(MSG.CLIENT_FULL_POWER):
-            raise SyntaxErrorException("CLIENT_FULL_POWER")
+            raise LogicErrorException("CLIENT_FULL_POWER confirmation does not match. %s != %s"
+                                % (raw_msg, get_client_message(MSG.CLIENT_FULL_POWER)))
         return raw_msg
-
-    if client_msg == MSG.CLIENT_CONFIRMATION:
+    elif client_msg == MSG.CLIENT_CONFIRMATION:
         if not re.match("^[0-9]{1,5}\x07\x08$", raw_msg):
             raise SyntaxErrorException("CLIENT_CONFIRMATION: on string %s" % str(raw_msg))
         return raw_msg
-
-    if client_msg == MSG.CLIENT_MESSAGE:
+    elif client_msg == MSG.CLIENT_MESSAGE:
         return raw_msg
-
-    if client_msg == MSG.CLIENT_USERNAME:
+    elif client_msg == MSG.CLIENT_USERNAME:
         return raw_msg
-
-
-def wait_for_connection(host, port):
-    color_print("GREEN", "Waiting for connection on %s:%d" % (host, port))
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind((host, port))
-    except Exception as inst:
-        msg = "Failed to create or connect a socket with the error %s." % inst
-        raise Exception(msg)
-
-    # Wait for the connection
-    sock.listen(0)
-
-    # Accept the incoming connection
-    (bot_conn, bot_addr) = sock.accept()
-    return sock, bot_conn, bot_addr
 
 
 def clamp(val, m_min, m_max):
+    """Clamps a value between min and max"""
     return max(min(val, m_max), m_min)
 

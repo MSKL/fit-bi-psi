@@ -5,7 +5,9 @@ from functions import *
 from classes.exceptions import *
 import select
 
+
 class Server:
+    """Implements the handling of the TCP server"""
     # Constants
     SERVER_KEY = 54621
     CLIENT_KEY = 45328
@@ -26,16 +28,22 @@ class Server:
     rotation = Rotation()
 
     def __init__(self, sock, bot_conn, bot_addr):
+        """
+        Initialise the server class.
+        :param sock: socket
+        :param bot_conn: connection
+        :param bot_addr: address
+        """
         self.sock = sock
         self.bot_conn = bot_conn
         self.bot_addr = bot_addr
 
-    # Do the login handshake
     def bot_connect(self):
+        """Do the login handshake"""
         color_print("RED", '<=> Connected by %s' % str(self.bot_addr))
 
         # Receive a message
-        username = self.receive_msg(MSG.CLIENT_USERNAME)
+        username = self.receive_handler(MSG.CLIENT_USERNAME)
 
         # Calculate the hash
         username_hash = hash_username(username)
@@ -46,7 +54,7 @@ class Server:
         self.send_msg(server_hash)
 
         # Receive the client's hash and strip it for confirmation
-        client_confirmation = self.receive_msg(MSG.CLIENT_CONFIRMATION)
+        client_confirmation = self.receive_handler(MSG.CLIENT_CONFIRMATION)
         client_confirmation = end_strip(client_confirmation)
 
         # Check the hash
@@ -55,8 +63,8 @@ class Server:
         else:
             self.send_msg(MSG.SERVER_OK)
 
-    # Sends message from the server. Accepts either any string, or a server message
     def send_msg(self, msg):
+        """Sends message from the server. Accepts either any string, or a server message"""
         # Try to get the message from the known ones
         known = get_server_message(msg)
         if known is not None:
@@ -73,21 +81,34 @@ class Server:
         color_print("DARKCYAN", "=> Sent: %s" % str(repr(msg)))
         self.bot_conn.sendall(to_bytes(msg))
 
-    # Receive a message from the bot's connection and strip the ending \a\b
+    def receive_handler(self, expected_msg):
+        """Wraps the receive msg and handles the recharging."""
+        received = self.receive_msg(expected_msg)
+
+        # If not RECHARGING message, return it
+        if str(received) != get_client_message(MSG.CLIENT_RECHARGING):
+            return received
+
+        # Receive the confirmation. It is checked in extract.
+        self.receive_msg(MSG.CLIENT_FULL_POWER)
+
+        # Get the real message that was originally expected
+        return self.receive_msg(expected_msg)
+
     def receive_msg(self, expected_msg):
-        received = ""       # String that is being received
-        whole_msg = False   # If ended well == is correctly long
+        """Receive a message from the bot's connection and strip the ending \a\b"""
+        received = ""   # String that is being received
 
         # Setup timeouts based on the expected message
-        if expected_msg == MSG.CLIENT_RECHARGING:
+        if expected_msg == MSG.CLIENT_FULL_POWER:
             self.bot_conn.settimeout(5.0)
         else:
             self.bot_conn.settimeout(1.0)
 
         # Try to read the message and throw an exception on error
         # Read until length exceeded
-        while len(received) <= (msg_len(expected_msg)):
-
+        # len(received) <= (msg_len(expected_msg))
+        while True:
             # Read from socket
             try:
                 data = self.bot_conn.recv(1)
@@ -101,13 +122,19 @@ class Server:
             # Convert to ASCII and add to the string
             received += str(data, 'utf-8')
 
-            if len(received) == msg_len(expected_msg) and received.endswith("\a"):
-                raise SyntaxErrorException("Message too long ends with\\a")
-
-            # if received properly,...
+            # Checking if ended properly
             if received.endswith("\a\b"):
-                whole_msg = True
                 break
+
+            # Length checking if full message
+            if len(received) == (msg_len(expected_msg) - 2):
+                pass
+            elif len(received) == (msg_len(expected_msg) - 1):
+                if not received.endswith("\a"):
+                    raise SyntaxErrorException("Message too long not ending with \\a")
+            elif len(received) == (msg_len(expected_msg) - 0):
+                if not received.endswith("\a\b"):
+                    raise SyntaxErrorException("Message too long not ending with \\a\\b.")
 
             # Invalid messages checking
             if expected_msg == MSG.CLIENT_RECHARGING:
@@ -116,33 +143,35 @@ class Server:
             elif expected_msg == MSG.CLIENT_FULL_POWER:
                 if not get_client_message(MSG.CLIENT_FULL_POWER).startswith(received):
                     raise SyntaxErrorException("CLIENT_FULL_POWER syntax error")
-            elif expected_msg == MSG.CLIENT_OK:
-                split = received.strip("\a\b").split(" ")
-                if len(split) > 3:
-                    raise SyntaxErrorException("CLIENT_OK syntax error: Too many split parts")
-                if len(split[0]) > 0 and not "OK".startswith(split[0]):
-                    raise SyntaxErrorException("CLIENT_OK syntax error: Problem in the OK")
-                try:
-                    if len(split) > 1 and split[1] != "":
-                        x = int(split[1])
-                    if len(split) > 2 and split[2] != "":
-                        x = int(split[2])
-                except Exception as e:
-                    raise SyntaxErrorException("CLIENT_OK syntax error: %s" % str(e))
             elif expected_msg == MSG.CLIENT_CONFIRMATION:
                 if not re.match("^[0-9]{1,5}", received):
                     raise SyntaxErrorException("CLIENT_CONFIRMATION")
+            elif expected_msg == MSG.CLIENT_OK:
+                split = received.strip("\a\b").split(" ")
 
-        # Raise an exception if ended too soon
-        if not whole_msg:
-            raise SyntaxErrorException("Message too long")
+                if len(split) > 3:
+                    raise SyntaxErrorException("CLIENT_OK syntax error: Too many split parts")
+                if len(split[0]) > 0:
+                    if not "OK".startswith(split[0]):
+                        raise SyntaxErrorException("CLIENT_OK syntax error: Problem in the OK")
+
+                # Try to convert the integral party to the integer. If failed it will raise an exception.
+                try:
+                    if len(split) > 1 and split[1] != "" and split[1] != "-":
+                        int(split[1])
+                    if len(split) > 2 and split[2] != "" and split[2] != "-":
+                        int(split[2])
+                except Exception as e:
+                    raise SyntaxErrorException("CLIENT_OK syntax error: %s" % str(e)) from None
 
         # Print a debug message
         color_print("LIGHTMAGENTA", "<= Received: %s" % repr(received))
+
+        # Return the extracted message
         return extract_message(received, expected_msg)
 
-    # Close a connection to a bot (if it exists)
     def bot_close(self):
+        """Close a connection to a bot (if it exists) """
         color_print("RED", "<=> Closing a connection.")
         try:
             self.bot_conn.close()
@@ -151,28 +180,24 @@ class Server:
             print("Tried to close a connection but it threw an error but who cares.")
             exit(13)
 
-    # Logout from the client
     def bot_logout(self):
+        """Logout from the client"""
         self.send_msg(MSG.SERVER_LOGOUT)
 
-    # Try to pickup an object
     def bot_pickup(self):
+        """Try to pickup an object"""
         self.send_msg(MSG.SERVER_PICK_UP)
-        message = self.receive_msg(MSG.CLIENT_MESSAGE)
-        if message:
-            print("Found the message %s." % message)
-        else:
-            raise Exception("Message was not found. This should not happen.")
+        return self.receive_handler(MSG.CLIENT_MESSAGE)
 
-    # Move one tile forward in the direction of current rotation
     def bot_move_forward(self):
+        """Move one tile forward in the direction of current rotation"""
         self.send_msg(MSG.SERVER_MOVE)
-        self.position = self.receive_msg(MSG.CLIENT_OK)
+        self.position = self.receive_handler(MSG.CLIENT_OK)
 
-    # Rotate right and set the proper state
     def bot_rotate(self):
+        """Rotate right and set the proper state"""
         self.send_msg(MSG.SERVER_TURN_RIGHT)
-        self.position = self.receive_msg(MSG.CLIENT_OK)
+        self.position = self.receive_handler(MSG.CLIENT_OK)
 
         # Set the proper next rotation
         if self.rotation == Facing.UP:
@@ -186,8 +211,8 @@ class Server:
         else:
             raise Exception("Can't rotate from unknown rotation. This should not happen.")
 
-    # Do few moves to obtain the position and orientation of the bot
     def bot_find_position_orientation(self):
+        """Do few moves to obtain the position and orientation of the bot"""
         last_pos = Position()
         while self.position.is_unknown() or self.rotation.is_unknown():
             self.bot_move_forward()
@@ -208,13 +233,13 @@ class Server:
                 else:
                     raise Exception("Problem in the orientation. This should not happen.")
 
-                print("The bot is %s" % str(self.rotation))
+                print("The bot is %s in the beginning." % str(self.rotation))
                 break
 
             last_pos = self.position
 
-    # Go to the position first on x, then on y axis
     def bot_go_to_position(self, new_x, new_y):
+        """Go to the position first on x, then on y axis"""
         np = Position(new_x, new_y)
         while self.position != np:
             # Move towards the target first on X and then on Y
@@ -231,7 +256,19 @@ class Server:
                 else:
                     self.bot_move_forward()
 
-    def bot_go_to_target_square(self):
-        target_y = clamp(self.position.y, -2, 2)
-        target_x = clamp(self.position.x, -2, 2)
-        self.bot_go_to_position(target_x, target_y)
+    def bot_do_search(self):
+        """First navigate to (-2, -2) and then do simple search"""
+        self.bot_go_to_position(-2, -2)
+        ctr = 0
+        # Search the space
+        for y in range(-2, 3):
+            if y % 2 == 0:
+                for x in range(-2, 3):
+                    self.bot_go_to_position(x, y)
+                    if self.bot_pickup() != "\a\b":
+                        return
+            else:
+                for x in range(2, -3, -1):
+                    self.bot_go_to_position(x, y)
+                    if self.bot_pickup() != "\a\b":
+                        return

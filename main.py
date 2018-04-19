@@ -3,8 +3,27 @@ from classes.exceptions import *
 import traceback
 
 
-# One thread equals one bot bitch
+def wait_for_connection(host, port):
+    """Waits for connection and returns socket, connection and address"""
+    color_print("GREEN", "Waiting for connection on %s:%d" % (host, port))
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((host, port))
+    except Exception as inst:
+        msg = "Failed to create or connect a socket with the error %s." % inst
+        raise Exception(msg)
+
+    # Wait for the connection
+    sock.listen(0)
+
+    # Accept the incoming connection
+    (bot_conn, bot_addr) = sock.accept()
+    return sock, bot_conn, bot_addr
+
+
 def thread_func():
+    """One thread equals one bot bitch"""
     server = None
 
     try:
@@ -19,24 +38,23 @@ def thread_func():
         # Obtain the position and orientation
         server.bot_find_position_orientation()
 
-        # Go to the origin
-        server.bot_go_to_target_square()
+        # Navigate to the origin and search the space
+        server.bot_do_search()
 
-        # Pickup the message
-        server.bot_pickup()
-
-        # Close the connection
+        # Send the logout command
         server.bot_logout()
 
         # Close the socket
         server.bot_close()
 
+    # Expected Exceptions
     except LoginFailedException as e:
         print("Exiting on the LoginFailedException %s." % str(e))
         server.send_msg(MSG.SERVER_LOGIN_FAILED)
         server.bot_close()
     except SyntaxErrorException as e:
         print("Exiting on the SyntaxErrorException %s." % str(e))
+        print(traceback.format_exc())
         server.send_msg(MSG.SERVER_SYNTAX_ERROR)
         server.bot_close()
     except LogicErrorException as e:
@@ -45,9 +63,10 @@ def thread_func():
         server.send_msg(MSG.SERVER_LOGIC_ERROR)
         server.bot_close()
     except TimeoutErrorException as e:
-        print(traceback.format_exc())
         print("Exiting on the TimeoutErrorException %s." % str(e))
         server.bot_close()
+
+    # Unexpected exceptions
     except Exception as e:
         print("Caught exception %s. Exiting the server." % str(e))
         print(traceback.format_exc())

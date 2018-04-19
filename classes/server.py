@@ -1,9 +1,8 @@
 import socket
-
-import sys
-
-from classes.position_orientation import *
+from classes.rotation import *
+from classes.position import *
 from functions import *
+from classes.exceptions import *
 
 
 class Server:
@@ -26,25 +25,13 @@ class Server:
     position = Position()
     rotation = Rotation()
 
-    # Set the port and host in init and create a socket
-    def __init__(self, host, port):
-        self.port = port
-        self.host = host
-        color_print("GREEN", "Starting a server on %s:%d" % (host, port))
-        try:
-            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.sock.bind((host, port))
-        except Exception as inst:
-            print("Failed to create or connect a socket with the error %s." % inst)
+    def __init__(self, sock, bot_conn, bot_addr):
+        self.sock = sock
+        self.bot_conn = bot_conn
+        self.bot_addr = bot_addr
 
-    # Connect to a bot. The connection was created when initialising
+    # Do the login handshake
     def bot_connect(self):
-        # Wait for the connection
-        self.sock.listen(0)
-        self.sock.settimeout(1000)
-
-        # Accept the incoming connection
-        (self.bot_conn, self.bot_addr) = self.sock.accept()
         color_print("RED", '<=> Connected by %s' % str(self.bot_addr))
 
         # Receive a message
@@ -63,8 +50,7 @@ class Server:
 
         # Check the hash
         if client_confirmation != str(client_hash_real):
-            self.send_msg(MSG.SERVER_LOGIN_FAILED)
-            self.bot_close()
+            raise LoginFailedException("Hashes do not match. Expected %s." % str(client_hash_real))
         else:
             self.send_msg(MSG.SERVER_OK)
 
@@ -83,14 +69,13 @@ class Server:
             msg = end_add(msg)
 
         # Convert the message to bytes and send it
-        color_print("DARKCYAN", "=> Sent: %s" % msg)
+        color_print("DARKCYAN", "=> Sent: %s" % str(repr(msg)))
         self.bot_conn.sendall(to_bytes(msg))
 
     # Receive a message from the bot's connection and strip the ending \a\b
     def receive_msg(self, expected_msg):
-        received_raw = ""       # String that is being received
-        a_came = False          # \a character came
-        read_whole_msg = False  # If ended well == is correctly long
+        received = ""       # String that is being received
+        whole_msg = False   # If ended well == is correctly long
 
         # Setup timeouts based on the expected message
         if expected_msg == MSG.CLIENT_RECHARGING:
@@ -98,52 +83,63 @@ class Server:
         else:
             self.sock.settimeout(1000)
 
-        debug_raw = ""
-
         # Try to read the message and throw an exception on error
         # Read until length exceeded
-        while len(received_raw) <= (msg_len(expected_msg) - 2):
+        while len(received) <= (msg_len(expected_msg)):
             # Read from socket
-            data = self.bot_conn.recv(1)
+            try:
+                data = self.bot_conn.recv(1)
+            except self.sock.timeout:
+                raise TimeoutErrorException("Connection timed out.")
 
             # If none end
             if not data:
-                print("Data is none")
+                raise TimeoutErrorException("Nothing came.")
+
+            # Convert to ASCII and add to the string
+            received += str(data, 'utf-8')
+
+            # if received properly,...
+            if received.endswith("\a\b"):
+                whole_msg = True
                 break
 
-            # Convert to ascii
-            s = str(data, 'utf-8')
-            debug_raw += s
-
-            # Do checks for end
-            if (s == "\a") and (not a_came):
-                a_came = True
-                continue
-            elif (s == "\b") and a_came:
-                read_whole_msg = True
-                break
-            elif (s != "\b") and a_came:
-                raise Exception("Wrong input")
-
-            # Add to the string
-            received_raw += s
+            # Invalid messages checking
+            if expected_msg == MSG.CLIENT_RECHARGING:
+                if not get_client_message(MSG.CLIENT_RECHARGING).startswith(received):
+                    raise SyntaxErrorException("CLIENT_RECHARGING syntax error")
+            elif expected_msg == MSG.CLIENT_FULL_POWER:
+                if not get_client_message(MSG.CLIENT_FULL_POWER).startswith(received):
+                    raise SyntaxErrorException("CLIENT_FULL_POWER syntax error")
+            elif expected_msg == MSG.CLIENT_OK:
+                split = received.strip("\a\b").split(" ")
+                if len(split[0]) > 0 and not "OK".startswith(split[0]):
+                    raise SyntaxErrorException("CLIENT_OK syntax error 1")
+                try:
+                    if len(split) > 1 and split[1] != "":
+                        x = int(split[1])
+                    if len(split) > 2 and split[2] != "":
+                        x = int(split[2])
+                except Exception as e:
+                    raise SyntaxErrorException("CLIENT_OK syntax error 2: %s" % str(e))
 
         # Raise an exception if ended too soon
-        if not read_whole_msg:
-            print("Raw debug: \"%s\"" % debug_raw)
-            raise Exception("Message too long")
+        if not whole_msg:
+            raise SyntaxErrorException("Message too long")
 
         # Print a debug message
-        color_print("LIGHTMAGENTA", "<= Received: %s" % received_raw)
-        return extract_message(received_raw, expected_msg)
+        color_print("LIGHTMAGENTA", "<= Received: %s" % repr(received))
+        return extract_message(received, expected_msg)
 
     # Close a connection to a bot (if it exists)
     def bot_close(self):
         color_print("RED", "<=> Closing a connection.")
         try:
             self.bot_conn.close()
+            self.sock.close()
         except:
             print("Tried to close a connection but it threw an error but who cares.")
+            exit(13)
 
     # Logout from the client
     def bot_logout(self):
@@ -152,7 +148,11 @@ class Server:
     # Try to pickup an object
     def bot_pickup(self):
         self.send_msg(MSG.SERVER_PICK_UP)
-        return self.receive_msg(MSG.CLIENT_MESSAGE)
+        message = self.receive_msg(MSG.CLIENT_MESSAGE)
+        if message:
+            print("Found the message %s." % message)
+        else:
+            raise Exception("Message was not found. This should not happen.")
 
     # Move one tile forward in the direction of current rotation
     def bot_move_forward(self):
@@ -174,7 +174,7 @@ class Server:
         elif self.rotation == Facing.LEFT:
             self.rotation = Facing.UP
         else:
-            raise Exception("Can't rotate from unknown rotation.")
+            raise Exception("Can't rotate from unknown rotation. This should not happen.")
 
     # Do few moves to obtain the position and orientation of the bot
     def bot_find_position_orientation(self):
@@ -196,7 +196,7 @@ class Server:
                 elif delta_y < 0:
                     self.rotation = Facing.DOWN
                 else:
-                    raise Exception("Problem in the orientation.")
+                    raise Exception("Problem in the orientation. This should not happen.")
 
                 print("The bot is %s" % str(self.rotation))
                 break
@@ -221,13 +221,7 @@ class Server:
                 else:
                     self.bot_move_forward()
 
-    def bot_search_target_space(self):
-        for y in range(-2, 3):
-            for x in range(-2, 3):
-                self.bot_go_to_position(x, y)
-                message = self.receive_msg(MSG.CLIENT_MESSAGE)
-                if message != "":
-                    print("Found the message %s." % message)
-                    return message
-        # If not found raise an exception
-        raise Exception("Message was not found")
+    def bot_go_to_target_square(self):
+        target_y = clamp(self.position.y, -2, 2)
+        target_x = clamp(self.position.x, -2, 2)
+        self.bot_go_to_position(target_x, target_y)

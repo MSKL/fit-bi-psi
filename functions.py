@@ -1,5 +1,7 @@
-from classes.position_orientation import Position
+from classes.position import Position
+from classes.exceptions import *
 from enum import Enum
+import socket
 
 
 # Enum containing all possible types of messages that are used in the communication
@@ -61,12 +63,12 @@ def get_server_message(msg_name):
 # Get the content of the message fro the client
 def get_client_message(msg_name):
     client_messages = {
-        MSG.CLIENT_USERNAME: "%s",
-        MSG.CLIENT_CONFIRMATION: "%s",
-        MSG.CLIENT_OK: "OK %d %d",
-        MSG.CLIENT_RECHARGING: "RECHARGING",
-        MSG.CLIENT_FULL_POWER: "FULL POWER",
-        MSG.CLIENT_MESSAGE: "%s"
+        MSG.CLIENT_USERNAME: "%s\a\b",
+        MSG.CLIENT_CONFIRMATION: "%s\a\b",
+        MSG.CLIENT_OK: "OK %d %d\a\b",
+        MSG.CLIENT_RECHARGING: "RECHARGING\a\b",
+        MSG.CLIENT_FULL_POWER: "FULL POWER\a\b",
+        MSG.CLIENT_MESSAGE: "%s\a\b"
     }
     # Get returns none if the key was not found
     return client_messages.get(msg_name)
@@ -97,7 +99,7 @@ def end_add(source):
 
 # Remove the ending separator
 def end_strip(source):
-    return str(source).strip("\a\b")
+    return str(source).rstrip("\a\b")
 
 
 # Print in a colored terminal
@@ -121,29 +123,31 @@ def color_print(color, text):
 
 # Extract data from a message. If faulty throw an an exception.
 def extract_message(raw_msg, client_msg):
-    raw_msg = end_strip(raw_msg)
 
     # Check the length TODO: Should not be needed
-    if len(raw_msg) > (msg_len(client_msg) - 2):
-        raise Exception("Too many characters")
+    if len(raw_msg) > (msg_len(client_msg)):
+        raise SyntaxErrorException("Too many characters \"%\"" % str(repr(client_msg)))
 
     if len(raw_msg) == 0 and client_msg != MSG.CLIENT_MESSAGE:
-        raise Exception("Input string length is 0")
+        raise SyntaxErrorException("Input string length is 0")
+
+    # Strip the ending \a\b
+    raw_msg = end_strip(raw_msg)
 
     if client_msg == MSG.CLIENT_OK:
         s = raw_msg.split(" ")
         if s[0] != "OK" or s[1] == "" or s[2] == "":
-            raise Exception("CLIENT_OK Exception")
+            raise SyntaxErrorException("CLIENT_OK Exception")
         return Position(int(s[1]), int(s[2]))
 
     if client_msg == MSG.CLIENT_RECHARGING:
         if raw_msg != get_client_message(MSG.CLIENT_RECHARGING):
-            raise Exception("CLIENT_RECHARGING Exception")
+            raise SyntaxErrorException("CLIENT_RECHARGING Exception")
         return raw_msg
 
     if client_msg == MSG.CLIENT_FULL_POWER:
         if raw_msg != get_client_message(MSG.CLIENT_FULL_POWER):
-            raise Exception("CLIENT_FULL_POWER Exception")
+            raise SyntaxErrorException("CLIENT_FULL_POWER Exception")
         return raw_msg
 
     if client_msg == MSG.CLIENT_CONFIRMATION:
@@ -156,9 +160,25 @@ def extract_message(raw_msg, client_msg):
         return raw_msg
 
 
+def wait_for_connection(host, port):
+    color_print("GREEN", "Waiting for connection on %s:%d" % (host, port))
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((host, port))
+    except Exception as inst:
+        msg = "Failed to create or connect a socket with the error %s." % inst
+        raise Exception(msg)
+
+    # Wait for the connection
+    sock.listen(0)
+    sock.settimeout(1000)
+
+    # Accept the incoming connection
+    (bot_conn, bot_addr) = sock.accept()
+    return sock, bot_conn, bot_addr
 
 
-
-
-
+def clamp(val, m_min, m_max):
+    return max(min(val, m_max), m_min)
 

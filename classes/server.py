@@ -3,7 +3,7 @@ from classes.rotation import *
 from classes.position import *
 from functions import *
 from classes.exceptions import *
-
+import select
 
 class Server:
     # Constants
@@ -45,12 +45,13 @@ class Server:
         # Get the binary array
         self.send_msg(server_hash)
 
-        # Receive the client's hash
+        # Receive the client's hash and strip it for confirmation
         client_confirmation = self.receive_msg(MSG.CLIENT_CONFIRMATION)
+        client_confirmation = end_strip(client_confirmation)
 
         # Check the hash
         if client_confirmation != str(client_hash_real):
-            raise LoginFailedException("Hashes do not match. Expected %s." % str(client_hash_real))
+            raise LoginFailedException("Hashes do not match. %s != %s." % (str(repr(client_confirmation)), str(repr(client_hash_real))))
         else:
             self.send_msg(MSG.SERVER_OK)
 
@@ -79,25 +80,29 @@ class Server:
 
         # Setup timeouts based on the expected message
         if expected_msg == MSG.CLIENT_RECHARGING:
-            self.sock.settimeout(5000)
+            self.bot_conn.settimeout(5.0)
         else:
-            self.sock.settimeout(1000)
+            self.bot_conn.settimeout(1.0)
 
         # Try to read the message and throw an exception on error
         # Read until length exceeded
         while len(received) <= (msg_len(expected_msg)):
+
             # Read from socket
             try:
                 data = self.bot_conn.recv(1)
-            except self.sock.timeout:
-                raise TimeoutErrorException("Connection timed out.")
+            except:
+                raise TimeoutErrorException("Connection timed out.") from None
 
             # If none end
             if not data:
-                raise TimeoutErrorException("Nothing came.")
+                raise Exception("Nothing came.")
 
             # Convert to ASCII and add to the string
             received += str(data, 'utf-8')
+
+            if len(received) == msg_len(expected_msg) and received.endswith("\a"):
+                raise SyntaxErrorException("Message too long ends with\\a")
 
             # if received properly,...
             if received.endswith("\a\b"):
@@ -113,15 +118,20 @@ class Server:
                     raise SyntaxErrorException("CLIENT_FULL_POWER syntax error")
             elif expected_msg == MSG.CLIENT_OK:
                 split = received.strip("\a\b").split(" ")
+                if len(split) > 3:
+                    raise SyntaxErrorException("CLIENT_OK syntax error: Too many split parts")
                 if len(split[0]) > 0 and not "OK".startswith(split[0]):
-                    raise SyntaxErrorException("CLIENT_OK syntax error 1")
+                    raise SyntaxErrorException("CLIENT_OK syntax error: Problem in the OK")
                 try:
                     if len(split) > 1 and split[1] != "":
                         x = int(split[1])
                     if len(split) > 2 and split[2] != "":
                         x = int(split[2])
                 except Exception as e:
-                    raise SyntaxErrorException("CLIENT_OK syntax error 2: %s" % str(e))
+                    raise SyntaxErrorException("CLIENT_OK syntax error: %s" % str(e))
+            elif expected_msg == MSG.CLIENT_CONFIRMATION:
+                if not re.match("^[0-9]{1,5}", received):
+                    raise SyntaxErrorException("CLIENT_CONFIRMATION")
 
         # Raise an exception if ended too soon
         if not whole_msg:

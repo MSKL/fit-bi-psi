@@ -1,5 +1,6 @@
 from classes.server import *
 from classes.exceptions import *
+import traceback
 
 
 # One thread equals one bot bitch
@@ -44,15 +45,18 @@ def thread_func():
         server.send_msg(MSG.SERVER_LOGIC_ERROR)
         server.bot_close()
     except TimeoutErrorException as e:
+        print(traceback.format_exc())
         print("Exiting on the TimeoutErrorException %s." % str(e))
         server.bot_close()
     except Exception as e:
-        print("Caught exception %s. Exiting the server" % str(e))
+        print("Caught exception %s. Exiting the server." % str(e))
+        print(traceback.format_exc())
         if server is not None:
             server.bot_close()
         return False
     except:
-        print("Unknown exception!")
+        print("Unknown exception! Exiting the server.")
+        print(traceback.format_exc())
         if server is not None:
             server.bot_close()
         return False

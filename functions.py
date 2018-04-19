@@ -2,6 +2,7 @@ from classes.position import Position
 from classes.exceptions import *
 from enum import Enum
 import socket
+import re
 
 
 # Enum containing all possible types of messages that are used in the communication
@@ -76,8 +77,9 @@ def get_client_message(msg_name):
 
 # Create a hash form the given username
 def hash_username(username):
+    stripped = end_strip(username)
     char_sum = 0
-    for ch in username:
+    for ch in stripped:
         char_sum += ord(ch)
     return (char_sum * 1000) % 65536
 
@@ -126,31 +128,31 @@ def extract_message(raw_msg, client_msg):
 
     # Check the length TODO: Should not be needed
     if len(raw_msg) > (msg_len(client_msg)):
-        raise SyntaxErrorException("Too many characters \"%\"" % str(repr(client_msg)))
+        raise SyntaxErrorException("Too many characters %s" % str(repr(client_msg)))
 
     if len(raw_msg) == 0 and client_msg != MSG.CLIENT_MESSAGE:
         raise SyntaxErrorException("Input string length is 0")
 
-    # Strip the ending \a\b
-    raw_msg = end_strip(raw_msg)
-
     if client_msg == MSG.CLIENT_OK:
-        s = raw_msg.split(" ")
-        if s[0] != "OK" or s[1] == "" or s[2] == "":
-            raise SyntaxErrorException("CLIENT_OK Exception")
+        if not re.match("^OK -?[0-9]{1,7} -?[0-9]{1,7}\x07\x08$", raw_msg):
+            raise SyntaxErrorException("CLIENT_OK")
+        s = end_strip(raw_msg)
+        s = s.split(" ")
         return Position(int(s[1]), int(s[2]))
 
     if client_msg == MSG.CLIENT_RECHARGING:
         if raw_msg != get_client_message(MSG.CLIENT_RECHARGING):
-            raise SyntaxErrorException("CLIENT_RECHARGING Exception")
+            raise SyntaxErrorException("CLIENT_RECHARGING")
         return raw_msg
 
     if client_msg == MSG.CLIENT_FULL_POWER:
         if raw_msg != get_client_message(MSG.CLIENT_FULL_POWER):
-            raise SyntaxErrorException("CLIENT_FULL_POWER Exception")
+            raise SyntaxErrorException("CLIENT_FULL_POWER")
         return raw_msg
 
     if client_msg == MSG.CLIENT_CONFIRMATION:
+        if not re.match("^[0-9]{1,5}\x07\x08$", raw_msg):
+            raise SyntaxErrorException("CLIENT_CONFIRMATION: on string %s" % str(raw_msg))
         return raw_msg
 
     if client_msg == MSG.CLIENT_MESSAGE:
@@ -172,7 +174,6 @@ def wait_for_connection(host, port):
 
     # Wait for the connection
     sock.listen(0)
-    sock.settimeout(1000)
 
     # Accept the incoming connection
     (bot_conn, bot_addr) = sock.accept()

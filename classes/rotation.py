@@ -1,8 +1,8 @@
 from enum import Enum
 
 
-# Enum that stores the bot direction state
 class Facing(Enum):
+    """Enum that stores the bot direction state"""
     UP = 1
     DOWN = 2
     LEFT = 3
@@ -10,8 +10,8 @@ class Facing(Enum):
     UNKNOWN = 0
 
 
-# Stores the orientation
 class Rotation:
+    """Stores the orientation"""
     facing = Facing.UNKNOWN
 
     def is_unknown(self):

@@ -5,9 +5,8 @@ import sys
 from threading import Thread
 
 
-
 def thread_func(sock):
-    """One thread equals one bot bitch"""
+    """Thread function runs in a thread"""
     while True:
         server = None
         try:

@@ -59,7 +59,8 @@ class Server:
 
         # Check the hash
         if client_confirmation != str(client_hash_real):
-            raise LoginFailedException("Hashes do not match. %s != %s." % (str(repr(client_confirmation)), str(repr(client_hash_real))))
+            raise LoginFailedException(
+                "Hashes do not match. %s != %s." % (str(repr(client_confirmation)), str(repr(client_hash_real))))
         else:
             self.send_msg(MSG.SERVER_OK)
 
@@ -97,7 +98,7 @@ class Server:
 
     def receive_msg(self, expected_msg):
         """Receive a message from the bot's connection and strip the ending \a\b"""
-        received = ""   # String that is being received
+        received = ""  # String that is being received
 
         # Setup timeouts based on the expected message
         if expected_msg == MSG.CLIENT_FULL_POWER:

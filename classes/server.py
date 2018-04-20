@@ -126,43 +126,51 @@ class Server:
             if received.endswith("\a\b"):
                 break
 
-            # Length checking if full message
-            if len(received) == (msg_len(expected_msg) - 2):
-                pass
-            elif len(received) == (msg_len(expected_msg) - 1):
-                if not received.endswith("\a"):
-                    raise SyntaxErrorException("Message too long not ending with \\a")
-            elif len(received) == (msg_len(expected_msg) - 0):
-                if not received.endswith("\a\b"):
-                    raise SyntaxErrorException("Message too long not ending with \\a\\b.")
+            # Handle the fucking recharging:
+            if get_client_message(MSG.CLIENT_RECHARGING).startswith(received):
+                # Length checking if recharging
+                if len(received) == (msg_len(MSG.CLIENT_RECHARGING) - 1):
+                    if not received.endswith("\a"):
+                        raise SyntaxErrorException("CLIENT_RECHARGING too long not ending with \\a")
+                elif len(received) == (msg_len(MSG.CLIENT_RECHARGING) - 0):
+                    if not received.endswith("\a\b"):
+                        raise SyntaxErrorException("CLIENT_RECHARGING too long not ending with \\a\\b.")
+            elif not get_client_message(MSG.CLIENT_RECHARGING).startswith(received):
+                # Length checking if not recharging
+                if len(received) == (msg_len(expected_msg) - 1):
+                    if not received.endswith("\a"):
+                        raise SyntaxErrorException("Message too long not ending with \\a")
+                elif len(received) == (msg_len(expected_msg) - 0):
+                    if not received.endswith("\a\b"):
+                        raise SyntaxErrorException("Message too long not ending with \\a\\b.")
 
-            # Invalid messages checking
-            if expected_msg == MSG.CLIENT_RECHARGING:
-                if not get_client_message(MSG.CLIENT_RECHARGING).startswith(received):
-                    raise SyntaxErrorException("CLIENT_RECHARGING syntax error")
-            elif expected_msg == MSG.CLIENT_FULL_POWER:
-                if not get_client_message(MSG.CLIENT_FULL_POWER).startswith(received):
-                    raise SyntaxErrorException("CLIENT_FULL_POWER syntax error")
-            elif expected_msg == MSG.CLIENT_CONFIRMATION:
-                if not re.match("^[0-9]{1,5}", received):
-                    raise SyntaxErrorException("CLIENT_CONFIRMATION")
-            elif expected_msg == MSG.CLIENT_OK:
-                split = received.strip("\a\b").split(" ")
+                # Invalid messages checking
+                if expected_msg == MSG.CLIENT_RECHARGING:
+                    if not get_client_message(MSG.CLIENT_RECHARGING).startswith(received):
+                        raise SyntaxErrorException("CLIENT_RECHARGING syntax error")
+                elif expected_msg == MSG.CLIENT_FULL_POWER:
+                    if not get_client_message(MSG.CLIENT_FULL_POWER).startswith(received):
+                        raise SyntaxErrorException("CLIENT_FULL_POWER syntax error")
+                elif expected_msg == MSG.CLIENT_CONFIRMATION:
+                    if not re.match("^[0-9]{1,5}", received):
+                        raise SyntaxErrorException("CLIENT_CONFIRMATION")
+                elif expected_msg == MSG.CLIENT_OK:
+                    split = received.strip("\a\b").split(" ")
 
-                if len(split) > 3:
-                    raise SyntaxErrorException("CLIENT_OK syntax error: Too many split parts")
-                if len(split[0]) > 0:
-                    if not "OK".startswith(split[0]):
-                        raise SyntaxErrorException("CLIENT_OK syntax error: Problem in the OK")
+                    if len(split) > 3:
+                        raise SyntaxErrorException("CLIENT_OK syntax error: Too many split parts")
+                    if len(split[0]) > 0:
+                        if not "OK".startswith(split[0]):
+                            raise SyntaxErrorException("CLIENT_OK syntax error: Problem in the OK")
 
-                # Try to convert the integral party to the integer. If failed it will raise an exception.
-                try:
-                    if len(split) > 1 and split[1] != "" and split[1] != "-":
-                        int(split[1])
-                    if len(split) > 2 and split[2] != "" and split[2] != "-":
-                        int(split[2])
-                except Exception as e:
-                    raise SyntaxErrorException("CLIENT_OK syntax error: %s" % str(e)) from None
+                    # Try to convert the integral party to the integer. If failed it will raise an exception.
+                    try:
+                        if len(split) > 1 and split[1] != "" and split[1] != "-":
+                            int(split[1])
+                        if len(split) > 2 and split[2] != "" and split[2] != "-":
+                            int(split[2])
+                    except Exception as e:
+                        raise SyntaxErrorException("CLIENT_OK syntax error: %s" % str(e)) from None
 
         # Print a debug message
         color_print("LIGHTMAGENTA", "<= Received: %s" % repr(received))

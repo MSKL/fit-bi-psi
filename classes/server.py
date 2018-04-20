@@ -3,7 +3,6 @@ from classes.rotation import *
 from classes.position import *
 from functions import *
 from classes.exceptions import *
-import select
 
 
 class Server:

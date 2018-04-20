@@ -1,7 +1,7 @@
-from classes.position import Position
+from classes.position import *
 from classes.exceptions import *
-from enum import Enum
 import re
+from enum import Enum
 
 
 class MSG(Enum):

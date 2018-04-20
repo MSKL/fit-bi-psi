@@ -1,3 +1,5 @@
 #!/bin/bash
 
-cat ./*.py ./classes/*.py > whole_app.py
+cat includes.inc > whole_app.py
+
+cat ./*.py ./classes/*.py | grep -Ev "import" >> whole_app.py

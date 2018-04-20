@@ -148,9 +148,6 @@ class Server:
                 if expected_msg == MSG.CLIENT_RECHARGING:
                     if not get_client_message(MSG.CLIENT_RECHARGING).startswith(received):
                         raise SyntaxErrorException("CLIENT_RECHARGING syntax error")
-                elif expected_msg == MSG.CLIENT_FULL_POWER:
-                    if not get_client_message(MSG.CLIENT_FULL_POWER).startswith(received):
-                        raise SyntaxErrorException("CLIENT_FULL_POWER syntax error")
                 elif expected_msg == MSG.CLIENT_CONFIRMATION:
                     if not re.match("^[0-9]{1,5}", received):
                         raise SyntaxErrorException("CLIENT_CONFIRMATION")
@@ -183,7 +180,6 @@ class Server:
         color_print("RED", "<=> Closing a connection.")
         try:
             self.bot_conn.close()
-            self.sock.close()
         except:
             print("Tried to close a connection but it threw an error but who cares.")
             exit(13)
@@ -267,7 +263,7 @@ class Server:
     def bot_do_search(self):
         """First navigate to (-2, -2) and then do simple search"""
         self.bot_go_to_position(-2, -2)
-        ctr = 0
+
         # Search the space
         for y in range(-2, 3):
             if y % 2 == 0:
@@ -280,3 +276,5 @@ class Server:
                     self.bot_go_to_position(x, y)
                     if self.bot_pickup() != "\a\b":
                         return
+
+        raise Exception("Bot did not found a message in all tiles. This should not happen.")

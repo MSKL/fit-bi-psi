@@ -1,7 +1,6 @@
 from classes.position import Position
 from classes.exceptions import *
 from enum import Enum
-import socket
 import re
 
 
